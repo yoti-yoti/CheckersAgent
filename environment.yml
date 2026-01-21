@@ -1,0 +1,40 @@
+name: draughts
+
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  # ---- Core ----
+  - python=3.11
+  - pip
+
+  # ---- RL / ML ----
+  - gymnasium
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+
+  # ---- Visualization ----
+  - matplotlib
+  - seaborn
+  - plotly
+
+  # ---- Utilities ----
+  - tqdm
+  - notebook
+  - cloudpickle
+  - farama-notifications
+
+  # ---- Optional CV ----
+  - opencv
+
+  # ---- PyTorch (CPU by default; CUDA handled separately) ----
+  - pytorch
+
+  # ---- Pip-only ----
+  - pip:
+      - optuna
