@@ -11,6 +11,14 @@ class BaseAgent(ABC):
         pass
 
     @abstractmethod
+    def finish_rollout(self):
+        pass
+
+    @abstractmethod
+    def learn_from_rollout(self, rollout):
+        pass
+
+    @abstractmethod
     def save(self, path):
         pass
 
