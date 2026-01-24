@@ -1,6 +1,107 @@
 # CheckersAgent
 Checkers Deep Neural Network agent 
 
+# Overview
+
+This project trains a reinforcement learning agent to play Checkers using Gymnasium and PyTorch, with support for self-play and policy-gradient methods (e.g. PPO-style updates).
+
+The system is designed to be:
+
+Modular – environments, agents, and networks are cleanly separated
+
+Extensible – new networks or environments can be plugged in easily
+
+Gym-compatible – training follows a standard RL loop
+
+High-Level Architecture
++--------------------+
+|     train.py       |
+|  (training loop)   |
++---------+----------+
+          |
+          | controls
+          v
++--------------------+        +----------------------+
+|   CheckersEnv      |<-------|  Opponent Policy     |
+| (Gym environment)  |        +----------------------+
++---------+----------+
+          ^
+          | observations / rewards 
+          | moves 
+          v
++---------+----------+
+|   CheckersAgent    | 
+| (rollout + update) |
++---------+----------+
+          |
+          v
++----------------------+
+| Neural Network       |
+| (via registry)       |
++----------------------+
+
+
+Flow per episode:
+
+Environment provides an observation (board state)
+
+Agent selects a legal action using the network
+
+Environment applies the move (and opponent move)
+
+Agent stores rollout data
+
+At episode end, advantages are computed and the network is updated
+
+Model checkpoint is saved after all episodes
+
+Getting Started
+1. Create the Conda Environment
+
+All dependencies are defined in environment.yml.
+
+conda env create -f environment.yml
+conda activate draughts
+
+
+(Using Conda is recommended but not strictly required as long as dependencies match.)
+
+2. Train an Agent
+python main.py train --network network1 --params ./network1/checkpoint_10 --epochs 1000
+
+
+--network selects a model from the network registry
+
+--epochs corresponds to the number of played episodes
+
+Models are automatically saved as checkpoints under:
+
+./<network_name>/checkpoint_<id>/
+
+3. Play Against a Trained Agent
+python main.py play --network network1 --params ./network1/checkpoint_10
+
+
+Loads the specified checkpoint
+
+Runs the environment in play mode
+
+You act as the opponent against the trained policy
+(play interface is currently not implemented / TODO)
+
+Extending the Project
+
+Add a new network
+Create a new file under networks/, implement forward, and register it: @register_network("<name_of_network>").
+
+Change learning logic
+Modify learn_from_rollout in CheckersAgent.
+
+Add a new environment
+Implement a Gym-compatible environment and wire it through make_env.
+
+The training loop remains unchanged as long as the agent extends BaseAgent.
+
 
 # Project TODOS:
 - go over all TODOs in code
