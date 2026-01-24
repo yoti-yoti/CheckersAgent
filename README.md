@@ -105,7 +105,7 @@ The training loop remains unchanged as long as the agent extends BaseAgent.
 
 # Project TODOS:
 - go over all TODOs in code
-- implement `learn_from_rollout` TODO 1
+- ~~implement `learn_from_rollout` TODO 1~~
 - implement `step` environment logic TODO 2
 - implement legal moves and jump logic in `checkers_moves.py` TODO 3
 - implement human player interface TODO 4
@@ -139,7 +139,7 @@ Questions:
 - `networks/registry.py` : file for registering all of the networks.
 - `networks/__init__.py` : file that is imported so that all networks are registered
 - `networks/network1.py` : first network example, all networks must have input size 64, the board (should be 8x8), and `forward` that returns `logits` a 256 long vector of the probabilities of all fo the moves, and `value` the network's estimation of the value of the inputted state. TODO implement base_network (abstract?) so all networks are extensions?
-- `checkers_moves.py` : TODO 3 - needs to be implemented helper file for computing the legal moves and jumps, perhaps? should be moved to `checkers_env.py`
+- `checkers_moves.py` : TODO 3 - needs to be implemented helper file for computing the legal moves and jumps, ~~perhaps? should be moved to `checkers_env.py`~~
 - `train.py` : contains logic for training loop: recieves env, agent, num_of_episodes, and runs loop of a game until it is finished, updating the rollout, then applying finish rollout and learn from rollout. Same for any env and agent that are gym environments and extend `BaseAgent`
 - `main.py` : main function for training, requires arguments for mode (train or play), --network (agent network to use form registry), --params (path to parameter file to load from(checkpoint)) and --epochs, number of epochs(episodes?) to run
     - if `train` runs training with the inputted network, if `play` TODO 4 - should implement interface for playing against the trained agent that was loaded.
