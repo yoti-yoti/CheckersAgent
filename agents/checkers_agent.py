@@ -7,14 +7,24 @@ from networks.registry import get_network_class
 # from networks.base_network import PolicyValueNet
 
 class CheckersAgent(BaseAgent):
-    def __init__(self, network_name="checkers_network1", device="cpu", checkpoint_id=0):
+    def __init__(self, network_name="checkers_network1", device=torch.device("cpu"), checkpoint_id=None):
         # Initialize your agent's parameters here
-        self.policy_network = None
-        if checkpoint_id==0:
+        # self.policy_network = None
+        if checkpoint_id is None:
             self.initialize_network(network_name, device)
         else:
             self.load(base_dir="checkpoints", network_name=network_name, checkpoint_id=checkpoint_id, device=device)
-        self.update_data = []
+        self.update_data = {
+            "obs": [],
+            "actions": [],
+            "log_probs": [],
+            "rewards": [],
+            "next_obs": [],
+            "dones": [],
+            "values": [],
+            "advantages": [],
+            # "returns": []
+        }
         self.LAMBDA = 0.95
         self.GAMMA = 0.99
 
@@ -22,25 +32,36 @@ class CheckersAgent(BaseAgent):
     def act(self, obs): #TODO make modular for which method to choose the move
         mask = get_legal_moves_mask(obs, player=1)
 
-        pi_moves, value = self.policy_network(obs, mask) # Assuming policy_network is an extension on nn.Module TODO Implement this
-        move = torch.argmax(pi_moves).item()  # Choose the action with highest probability OR sample from pi_moves
-        return move, pi_moves[move], value # OR return max action from pi_moves or return sampled action
+        prob_of_moves, value = self.policy_network(obs, mask) # Assuming policy_network is an extension on nn.Module TODO Implement this
+        move = torch.argmax(prob_of_moves).item()  # Choose the action with highest probability OR sample from prob_of_moves
+        return move, prob_of_moves[move], value # OR return max action from prob_of_moves or return sampled action
 
     def update(self, transition):
         # Implement learning update logic here
-        self.update_data.append(transition)
+        for data, key in zip(transition, self.update_data.keys()):
+            self.update_data[key].append(data)
         pass
 
     def finish_rollout(self):
         # Implement logic to finalize the rollout
         rollout = self.update_data
-        rewards = [roll[3] for roll in rollout]
-        values = [roll[6] for roll in rollout]
-        dones = [roll[5] for roll in rollout]
+        rewards = rollout["rewards"]
+        values = rollout["values"]
+        dones = rollout["dones"]
         advantages = self.calculate_advantages(rewards, values, dones)
-        for i in range(len(rollout)):
-            rollout[i] = rollout[i] + (advantages[i],)            
-        self.update_data = []  # Clear for next rollout
+        rollout["advantages"] = advantages
+
+        self.update_data = { # Clear for next rollout
+            "obs": [],
+            "actions": [],
+            "log_probs": [],
+            "rewards": [],
+            "next_obs": [],
+            "dones": [],
+            "values": [],
+            "advantages": [],
+            # "returns": []
+        }  
         return rollout
     
     def calculate_advantages(self, rewards, values, dones):
@@ -54,10 +75,43 @@ class CheckersAgent(BaseAgent):
         advantages.reverse()
         return advantages
     
-    def learn_from_rollout(self, rollout):
-        # Implement learning from the collected rollout
-        # TODO
-        pass
+    def learn_from_rollout(self, rollout, clip_eps=0.2):
+        # Convert to tensors if not already
+        # TODO TODO TODO TODO
+        # TODO rollout is more than one game? what do i do?
+        # rollout = self.finish_rollout()
+        # states = torch.tensor(rollout["obs"], dtype=torch.int8) # TODO CHECK TYPE each obs is a board state -> a box of 8x8 TODO What type is box?
+        # actions = torch.tensor(rollout["actions"])
+        # log_probs_old = torch.tensor(rollout["log_probs"], dtype=torch.float32)
+        # returns = torch.tensor(rollout["returns"], dtype=torch.float32)
+        # advantages = torch.tensor(rollout["advantages"], dtype=torch.float32)
+        
+        # # Normalize advantages
+        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8) # TODO Why +1e-8? because std can be 0
+        
+        # # Get current policy outputs
+        # dist, values = policy_net(states)  # dist: action distribution, values: critic
+        # log_probs = dist.log_prob(actions)
+        # entropy = dist.entropy().mean()
+        
+        # # PPO policy loss
+        # ratio = torch.exp(log_probs - log_probs_old)
+        # policy_loss = -torch.mean(torch.min(ratio * advantages,
+        #                                     torch.clamp(ratio, 1-clip_eps, 1+clip_eps) * advantages))
+        
+        # # Value loss
+        # value_loss = F.mse_loss(values.squeeze(), returns)
+        
+        # # Total loss
+        # loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
+        
+        # optimizer.zero_grad()
+        # loss.backward()
+        # torch.nn.utils.clip_grad_norm_(policy_net.parameters(), 0.5)
+        # optimizer.step()
+        
+        return loss.item()
+
 
     def _next_checkpoint_id(self, save_dir: str) -> int:
         existing = [
@@ -103,7 +157,7 @@ class CheckersAgent(BaseAgent):
         # obs_dim: int,
         # action_dim: int,
         checkpoint_id: int | None = None,
-        device="cpu",
+        device=torch.device("cpu"),
     ):
         """
         Loads a policy network by name.
@@ -141,7 +195,7 @@ class CheckersAgent(BaseAgent):
 
         print(f"Loaded {network_name} from {load_path}")
 
-    def initialize_network(self, network_name: str, device="cpu"):
+    def initialize_network(self, network_name: str, device=torch.device("cpu")):
         """
         Initializes a new policy network.
         

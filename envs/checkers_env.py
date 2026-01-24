@@ -87,6 +87,7 @@ class CheckersEnv(gym.Env):
         self.current_player *= -1
 
         return self.board.copy(), reward, terminated, truncated, info
+        
 
     def render(self):
         if self.render_mode == "human":

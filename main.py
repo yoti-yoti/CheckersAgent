@@ -1,21 +1,57 @@
 import argparse
 from enum import Enum
+from envs.make_env import make_env
+from agents.checkers_agent import CheckersAgent
+import os
+import torch
+from dotenv import load_dotenv
+import training.train as train_module
 
-class NetworkType(Enum): #TODO change to be the different networks
-    CNN = "cnn"
-    DENSE = "dense"
-    TRANSFORMER = "transformer"
 
-def train(network_type: NetworkType, params_path: str):
+def initialize(network_type: str, params_path: str):
+    """Initialize the network based on the type and parameters."""
+    print(f"Initializing {network_type} network with parameters from {params_path}") 
+    env = make_env("Checkers-v0") 
+    
+
+    load_dotenv()
+
+    # Optional: let user force a device in .env
+    device_str = os.getenv("DEVICE", "auto").lower()
+
+    if device_str == "auto":
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print("Using CUDA GPU")
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device = torch.device("mps")
+            print("Using Apple MPS GPU")
+        else:
+            device = torch.device("cpu")
+            print("Using CPU")
+    else:
+        # Use the device explicitly from .env, e.g., "cpu", "cuda:0", "mps"
+        device = torch.device(device_str)
+        print(f"Using device from .env: {device}")
+
+    agent = CheckersAgent(network_name=network_type, device=device, checkpoint_id=params_path)
+    return env, agent
+
+
+def train(network_type: str, params_path: str, number_of_eps: int = 10):
     """Train the checkers agent."""
-    print(f"Training with {network_type.value} network")
+    print(f"Training with {network_type} network")
     print(f"Loading parameters from: {params_path}")
-    # TODO: Implement training logic
-    pass
+    env, agent = initialize(network_type, params_path)
+    print(f"Starting training for {number_of_eps} episodes")
+    train_module.train(env, agent, number_of_eps)
+    agent.save(base_dir="checkpoints", network_name=network_type)
+    
+    
 
-def play(network_type: NetworkType, params_path: str):
+def play(network_type: str, params_path: str):
     """Play checkers with the trained agent."""
-    print(f"Playing with {network_type.value} network")
+    print(f"Playing with {network_type} network")
     print(f"Loading model from: {params_path}")
     # TODO: Implement play logic
     pass
@@ -30,7 +66,6 @@ def main():
     parser.add_argument(
         "--network",
         type=str,
-        choices=[nt.value for nt in NetworkType],
         required=True,
         help="Network type to use"
     )
@@ -44,18 +79,15 @@ def main():
         "--epochs",
         type=int,
         default=10,
-        help="Number of epochs for training (required if mode is train)"
+        help="Number of epochs for training (default: 10)"
     )
     
     args = parser.parse_args()
     
-    if args.mode == "train" and args.epochs is None:
-        parser.error("--epochs is required when mode is 'train'")
-    
-    network_type = NetworkType(args.network)
+    network_type = args.network
     
     if args.mode == "train":
-        train(network_type, args.params)
+        train(network_type, args.params, args.epochs)
     elif args.mode == "play":
         play(network_type, args.params)
 
