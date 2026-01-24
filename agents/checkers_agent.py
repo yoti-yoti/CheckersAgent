@@ -30,7 +30,7 @@ class CheckersAgent(BaseAgent):
 
 
     def act(self, obs): #TODO make modular for which method to choose the move
-        mask = get_legal_moves_mask(obs, player=1)
+        mask = get_legal_moves_mask(obs, player=1) # TODO add flag for forced jumps?
 
         prob_of_moves, value = self.policy_network(obs, mask) # Assuming policy_network is an extension on nn.Module TODO Implement this
         move = torch.argmax(prob_of_moves).item()  # Choose the action with highest probability OR sample from prob_of_moves
@@ -48,7 +48,7 @@ class CheckersAgent(BaseAgent):
         rewards = rollout["rewards"]
         values = rollout["values"]
         dones = rollout["dones"]
-        advantages = self.calculate_advantages(rewards, values, dones)
+        advantages = self._calculate_advantages(rewards, values, dones)
         rollout["advantages"] = advantages
 
         self.update_data = { # Clear for next rollout
@@ -63,8 +63,8 @@ class CheckersAgent(BaseAgent):
             # "returns": []
         }  
         return rollout
-    
-    def calculate_advantages(self, rewards, values, dones):
+
+    def _calculate_advantages(self, rewards, values, dones):
         advantages = []
         gae = 0
         values = values + [0]  # Append a zero for the last value

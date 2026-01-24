@@ -6,6 +6,7 @@ import os
 import torch
 from dotenv import load_dotenv
 import training.train as train_module
+import networks
 
 
 def initialize(network_type: str, params_path: str):

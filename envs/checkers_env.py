@@ -15,7 +15,7 @@ class CheckersEnv(gym.Env):
 
     metadata = {"render_modes": ["human"]}
 
-    def __init__(self, render_mode=None):
+    def __init__(self, opponent_policy=None,render_mode=None):
         super().__init__()
 
         self.render_mode = render_mode
@@ -28,13 +28,12 @@ class CheckersEnv(gym.Env):
             dtype=np.int8,
         )
 
-        # Action space (TEMPORARY):
         # from_square (0–31) × move in directions (0–7)
         self.action_space = spaces.Discrete(32 * 8)
 
         self.board = None
         self.current_player = 1  # 1 = agent, -1 = opponent
-        self.opponent_policy = None  # Placeholder for opponent policy
+        self.opponent_policy = opponent_policy 
 
     # -------------------------
     # Gym API
