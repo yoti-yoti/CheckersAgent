@@ -1,6 +1,8 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+from checkers_moves import check_game_status, board_after_move, get_forced_jumps
+from agents.base_agent import BaseAgent
 
 
 class CheckersEnv(gym.Env):
@@ -15,7 +17,7 @@ class CheckersEnv(gym.Env):
 
     metadata = {"render_modes": ["human"]}
 
-    def __init__(self, opponent_policy=None,render_mode=None):
+    def __init__(self, opponent_policy: BaseAgent,render_mode=None):
         super().__init__()
 
         self.render_mode = render_mode
@@ -33,7 +35,7 @@ class CheckersEnv(gym.Env):
 
         self.board = None
         self.current_player = 1  # 1 = agent, -1 = opponent
-        self.opponent_policy = opponent_policy 
+        self.opponent_policy_agent = opponent_policy 
 
     # -------------------------
     # Gym API
@@ -47,46 +49,41 @@ class CheckersEnv(gym.Env):
         return self.board.copy(), {}
 
     def step(self, action):
-        from_sq, dir = divmod(action, 8)
-        from_r, from_c = divmod(from_sq, 4)
-        if from_r % 2 == 0:
-            from_c = from_c * 2 + 1
-        else:
-            from_c = from_c * 2
-
-        # TODO Make dir_map global?
-        dir_map = [(-1, -1), (-1, 1), (1, -1), (1, 1),
-                   (-2, -2), (-2, 2), (2, -2), (2, 2)]
-        dr, dc = dir_map[dir]
-        to_r, to_c = from_r + dr, from_c + dc
-
         reward = 0.0
         terminated = False
         truncated = False
         info = {}
 
-        # VERY basic legality check (placeholder)
-        piece = self.board[from_r, from_c]
-        if piece * self.current_player <= 0:
-            reward = -1.0  # illegal move
+        self.board = board_after_move(self.board, action, self.current_player)
+        status = check_game_status(self.board, self.current_player)
+        if status == 'win':
+            reward = 1.0
             terminated = True
-            return self.board.copy(), reward, terminated, truncated, info
-
-        # Apply move (no capture logic yet)
-        self.board[to_r, to_c] = self.board[from_r, from_c]
-        self.board[from_r, from_c] = 0
-
+        elif status == 'draw':
+            reward = 0.0
+            terminated = True
         # TODO:
-        # - capture logic
-        # - king promotion
-        # - forced jumps
-        # - win/loss detection
 
         # Switch player (for now opponent does nothing)
-        self.current_player *= -1
+        if status == 'ongoing' and not get_forced_jumps(self.board, self.current_player, action):
+            self.current_player *= -1
+            first=True
+            opponent_action=None
+            while first or get_forced_jumps(self.board, self.current_player, opponent_action):
+                first=False
+                opponent_action, _, _ = self.opponent_policy_agent.act(self.board)
+                # Apply the opponent's action
+                self.board = board_after_move(self.board, opponent_action, self.current_player)
+            status = check_game_status(self.board, self.current_player)
+            if status == 'loss':
+                reward = -1.0
+                terminated = True
+            elif status == 'draw':
+                reward = 0.0
+                terminated = True
+            self.current_player *= -1
 
-        return self.board.copy(), reward, terminated, truncated, info
-        
+        return self.board.copy(), reward, terminated, truncated, info # type: ignore # Should never be None here
 
     def render(self):
         if self.render_mode == "human":

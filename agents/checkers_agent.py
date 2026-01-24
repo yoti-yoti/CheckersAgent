@@ -35,8 +35,7 @@ class CheckersAgent(BaseAgent):
         #check if forced jumps, checkers env doesn't change to opponent player if there is a forced jump, and the current state will be the same as from the previous
         prev_obs = self.update_data["obs"][-1] if self.update_data["obs"] else None
         last_action = self.update_data["actions"][-1] if self.update_data["actions"] else None
-        forced_from = last_action if obs == board_after_move(prev_obs, last_action, player=1) else None
-        mask = get_legal_moves_mask(obs, player=1, forced_from=forced_from) # TODO add flag for forced jumps?
+        mask = get_legal_moves_mask(obs, player=1, prev_board=prev_obs, last_action=last_action) # TODO add flag for forced jumps?
 
         prob_of_moves, value = self.policy_network(obs) # Assuming policy_network is an extension on nn.Module
         # apply mask to prob_of_moves

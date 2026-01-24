@@ -1,9 +1,12 @@
 # agents/base_agent.py
 from abc import ABC, abstractmethod
+from typing import Any
+
+from torch import Tensor
 
 class BaseAgent(ABC):
     @abstractmethod
-    def act(self, obs):
+    def act(self, obs) -> tuple[Any, Tensor, Any]:
         pass
 
     @abstractmethod
