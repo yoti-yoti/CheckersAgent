@@ -55,7 +55,7 @@ At episode end, advantages are computed and the network is updated
 
 Model checkpoint is saved after all episodes
 
-Getting Started
+# Getting Started
 1. Create the Conda Environment
 
 All dependencies are defined in environment.yml.

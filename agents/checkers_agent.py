@@ -1,9 +1,10 @@
 from base_agent import BaseAgent
 from abc import abstractmethod
-from checkers_moves import get_legal_moves_mask
+from checkers_moves import get_legal_moves_mask, board_after_move
 import torch
 import os
 from networks.registry import get_network_class
+import torch.nn.functional as F
 # from networks.base_network import PolicyValueNet
 
 class CheckersAgent(BaseAgent):
@@ -27,14 +28,24 @@ class CheckersAgent(BaseAgent):
         }
         self.LAMBDA = 0.95
         self.GAMMA = 0.99
+        self.optimizer = torch.optim.Adam(self.policy_network.parameters(), lr=0.0003)
 
 
     def act(self, obs): #TODO make modular for which method to choose the move
-        mask = get_legal_moves_mask(obs, player=1) # TODO add flag for forced jumps?
+        #check if forced jumps, checkers env doesn't change to opponent player if there is a forced jump, and the current state will be the same as from the previous
+        prev_obs = self.update_data["obs"][-1] if self.update_data["obs"] else None
+        last_action = self.update_data["actions"][-1] if self.update_data["actions"] else None
+        forced_from = last_action if obs == board_after_move(prev_obs, last_action, player=1) else None
+        mask = get_legal_moves_mask(obs, player=1, forced_from=forced_from) # TODO add flag for forced jumps?
 
-        prob_of_moves, value = self.policy_network(obs, mask) # Assuming policy_network is an extension on nn.Module TODO Implement this
+        prob_of_moves, value = self.policy_network(obs) # Assuming policy_network is an extension on nn.Module
+        # apply mask to prob_of_moves
+        prob_of_moves = torch.softmax(prob_of_moves, dim=-1)
+        prob_of_moves = prob_of_moves * torch.tensor(mask, dtype=torch.float32)
+        prob_of_moves = prob_of_moves / prob_of_moves.sum()  # Re-normalize
         move = torch.argmax(prob_of_moves).item()  # Choose the action with highest probability OR sample from prob_of_moves
-        return move, prob_of_moves[move], value # OR return max action from prob_of_moves or return sampled action
+
+        return move, torch.log(prob_of_moves[int(move)]), value # OR return max action from prob_of_moves or return sampled action
 
     def update(self, transition):
         # Implement learning update logic here
@@ -43,13 +54,13 @@ class CheckersAgent(BaseAgent):
         pass
 
     def finish_rollout(self):
-        # Implement logic to finalize the rollout
+        # Implement logic to finalize the rollout #TODO add option for rollout per episode or multiple episodes - must count number of moves in episode?
         rollout = self.update_data
         rewards = rollout["rewards"]
         values = rollout["values"]
         dones = rollout["dones"]
         advantages = self._calculate_advantages(rewards, values, dones)
-        rollout["advantages"] = advantages
+        rollout["advantages"].append(advantages)
 
         self.update_data = { # Clear for next rollout
             "obs": [],
@@ -79,36 +90,36 @@ class CheckersAgent(BaseAgent):
         # Convert to tensors if not already
         # TODO TODO TODO TODO
         # TODO rollout is more than one game? what do i do?
-        # rollout = self.finish_rollout()
-        # states = torch.tensor(rollout["obs"], dtype=torch.int8) # TODO CHECK TYPE each obs is a board state -> a box of 8x8 TODO What type is box?
-        # actions = torch.tensor(rollout["actions"])
-        # log_probs_old = torch.tensor(rollout["log_probs"], dtype=torch.float32)
-        # returns = torch.tensor(rollout["returns"], dtype=torch.float32)
-        # advantages = torch.tensor(rollout["advantages"], dtype=torch.float32)
+        rollout = self.finish_rollout()
+        states = torch.tensor(rollout["obs"], dtype=torch.int8) # TODO CHECK TYPE each obs is a board state -> a box of 8x8 TODO What type is box?
+        actions = torch.tensor(rollout["actions"])
+        log_probs_old = torch.tensor(rollout["log_probs"], dtype=torch.float32)
+        returns = torch.tensor(rollout["returns"], dtype=torch.float32)
+        advantages = torch.tensor(rollout["advantages"], dtype=torch.float32)
         
         # # Normalize advantages
-        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8) # TODO Why +1e-8? because std can be 0
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8) # Why +1e-8? because std can be 0
         
         # # Get current policy outputs
-        # dist, values = policy_net(states)  # dist: action distribution, values: critic
-        # log_probs = dist.log_prob(actions)
-        # entropy = dist.entropy().mean()
+        dist, values = self.policy_network(states)  # dist: action distribution, values: critic
+        log_probs = dist.log_prob(actions)    
+        entropy = dist.entropy().mean()
         
         # # PPO policy loss
-        # ratio = torch.exp(log_probs - log_probs_old)
-        # policy_loss = -torch.mean(torch.min(ratio * advantages,
-        #                                     torch.clamp(ratio, 1-clip_eps, 1+clip_eps) * advantages))
+        ratio = torch.exp(log_probs - log_probs_old)
+        policy_loss = -torch.mean(torch.min(ratio * advantages,
+                                            torch.clamp(ratio, 1-clip_eps, 1+clip_eps) * advantages))
         
         # # Value loss
-        # value_loss = F.mse_loss(values.squeeze(), returns)
+        value_loss = F.mse_loss(values.squeeze(), returns)
         
         # # Total loss
-        # loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
+        loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
         
-        # optimizer.zero_grad()
-        # loss.backward()
-        # torch.nn.utils.clip_grad_norm_(policy_net.parameters(), 0.5)
-        # optimizer.step()
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_network.parameters(), 0.5)
+        self.optimizer.step()
         
         return loss.item()
 
