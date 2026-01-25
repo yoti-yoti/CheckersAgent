@@ -1,5 +1,7 @@
 import numpy as np
 
+DIR_MAP = [(-1, -1), (-1, 1), (1, -1), (1, 1),
+               (-2, -2), (-2, 2), (2, -2), (2, 2)]
 
 def get_legal_moves_mask(board, player, prev_board=None, last_action=None):
     legal_moves = generate_legal_moves(
@@ -55,7 +57,7 @@ def generate_legal_moves(board, player, prev_board=None, last_action=None):
         _, jump_dirs = get_directions(piece, player)
 
         for i, (dr, dc) in enumerate(jump_dirs):
-            mid_r, mid_c = r + dr // 2, c + dc // 2
+            mid_r, mid_c = r + (dr // 2), c + (dc // 2)
             to_r, to_c = r + dr, c + dc
 
             if (
@@ -63,7 +65,7 @@ def generate_legal_moves(board, player, prev_board=None, last_action=None):
                 board[to_r, to_c] == 0 and
                 board[mid_r, mid_c] * player < 0
             ):
-                legal_moves.append(from_sq * 8 + (4 + i))
+                legal_moves.append(from_sq * 8 + DIR_MAP.index((dr, dc)))
 
         return legal_moves
 
@@ -79,7 +81,7 @@ def generate_legal_moves(board, player, prev_board=None, last_action=None):
 
             # Jumps
             for i, (dr, dc) in enumerate(jump_dirs):
-                mid_r, mid_c = r + dr // 2, c + dc // 2
+                mid_r, mid_c = r + (dr // 2), c + (dc // 2)
                 to_r, to_c = r + dr, c + dc
 
                 if (
@@ -87,7 +89,7 @@ def generate_legal_moves(board, player, prev_board=None, last_action=None):
                     board[to_r, to_c] == 0 and
                     board[mid_r, mid_c] * player < 0
                 ):
-                    jump_moves.append(from_sq * 8 + (4 + i))
+                    jump_moves.append(from_sq * 8 + DIR_MAP.index((dr, dc)))
 
             # Normal moves
             for i, (dr, dc) in enumerate(normal_dirs):
@@ -96,7 +98,7 @@ def generate_legal_moves(board, player, prev_board=None, last_action=None):
                     0 <= to_r < 8 and 0 <= to_c < 8 and
                     board[to_r, to_c] == 0
                 ):
-                    legal_moves.append(from_sq * 8 + i)
+                    legal_moves.append(from_sq * 8 + DIR_MAP.index((dr, dc)))
 
     # 3. Mandatory capture
     if jump_moves:
@@ -182,9 +184,10 @@ def board_after_move(board, action, player): # TODO
     else:
         from_c = from_c * 2
 
-    dir_map = [(-1, -1), (-1, 1), (1, -1), (1, 1),
-               (-2, -2), (-2, 2), (2, -2), (2, 2)]
-    dr, dc = dir_map[dir]
+    # dir_map = [(-1, -1), (-1, 1), (1, -1), (1, 1),
+    #            (-2, -2), (-2, 2), (2, -2), (2, 2)]
+    
+    dr, dc = DIR_MAP[dir]
     to_r, to_c = from_r + dr, from_c + dc
     # Apply move
     if dir >= 4:  # Jump move
@@ -192,9 +195,9 @@ def board_after_move(board, action, player): # TODO
         new_board[mid_r, mid_c] = 0  # Remove jumped piece
     new_board[to_r, to_c] = new_board[from_r, from_c]
     new_board[from_r, from_c] = 0
-    if to_r == 7 and player == 1:
+    if to_r == 0 and player == 1:
         new_board[to_r, to_c] = 2  # Promote to king
-    if to_r == 0 and player == -1:
+    if to_r == 7 and player == -1:
         new_board[to_r, to_c] = -2  # Promote to king
 
     return new_board

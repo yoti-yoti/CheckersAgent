@@ -10,7 +10,7 @@ import networks
 import envs
 
 
-def initialize(network_type: str, params_path: str, opponent_policy: str, opp_params_path: str):
+def initialize(network_type: str, params_path: int, opponent_policy: str, opp_params_path: int):
     """Initialize the network based on the type and parameters."""
     print("Creating Checkers environment with opponent policy:", opponent_policy)
 
@@ -34,15 +34,15 @@ def initialize(network_type: str, params_path: str, opponent_policy: str, opp_pa
         device = torch.device(device_str)
         print(f"Using device from .env: {device}")
     
-    opp_agent = CheckersAgent(network_name=opponent_policy, device=device, checkpoint_id=opp_params_path)
+    opp_agent = CheckersAgent(network_name=opponent_policy, device=device, checkpoint_id=opp_params_path, player='opponent')
     env = make_env("Checkers-v0", opponent_policy=opp_agent)
     print(f"Initializing {network_type} network with parameters from {params_path}") 
 
-    agent = CheckersAgent(network_name=network_type, device=device, checkpoint_id=params_path)
+    agent = CheckersAgent(network_name=network_type, device=device, checkpoint_id=params_path, player='agent')
     return env, agent
 
 
-def train(network_type: str, params_path: str, opponent_policy: str, opp_params_path: str, number_of_eps: int = 10,):
+def train(network_type: str, params_path: int, opponent_policy: str, opp_params_path: int, number_of_eps: int = 10,):
     """Train the checkers agent."""
     print(f"Training with {network_type} network")
     print(f"Loading parameters from: {params_path}")
@@ -81,13 +81,13 @@ def main():
     )
     parser.add_argument(
         "--params",
-        type=str,
+        type=int,
         default=None,
         help="Path to parameters file"
     )
     parser.add_argument(
         "--oppparams",
-        type=str,
+        type=int,
         default=None,
         help="Path to parameters file for opponent"
     )

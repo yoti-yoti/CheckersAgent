@@ -5,13 +5,21 @@ import torch
 import os
 from networks.registry import get_network_class
 import torch.nn.functional as F
+import numpy as np
 # from networks.base_network import PolicyValueNet
 
 class CheckersAgent(BaseAgent):
-    def __init__(self, network_name="checkers_network1", device=torch.device("cpu"), checkpoint_id=None):
+    def __init__(self, network_name="checkers_network1", device=torch.device("cpu"), checkpoint_id=None, player='agent', eps=0.1):
         # Initialize your agent's parameters here
         # self.policy_network = None
         self.device = device
+        self.eps = eps  # exploration rate
+        if player not in ['agent', 'opponent']:
+            raise ValueError("player must be 'agent' or 'opponent'")
+        if player == 'agent':
+            self.player = 1
+        else:
+            self.player = -1
         if checkpoint_id is None:
             self.initialize_network(network_name, device)
         else:
@@ -36,7 +44,7 @@ class CheckersAgent(BaseAgent):
         #check if forced jumps, checkers env doesn't change to opponent player if there is a forced jump, and the current state will be the same as from the previous
         prev_obs = self.update_data["obs"][-1] if self.update_data["obs"] else None
         last_action = self.update_data["actions"][-1] if self.update_data["actions"] else None
-        mask = get_legal_moves_mask(obs, player=1, prev_board=prev_obs, last_action=last_action) # TODO add flag for forced jumps?
+        mask = get_legal_moves_mask(obs, player=self.player, prev_board=prev_obs, last_action=last_action) # TODO add flag for forced jumps?
 
         tensor_obs = torch.from_numpy(obs).float().unsqueeze(0).to(self.device)  # Add batch dimension # TODO need unsqueeze?
         prob_of_moves, value = self.policy_network(tensor_obs) # Assuming policy_network is an extension on nn.Module
@@ -44,7 +52,17 @@ class CheckersAgent(BaseAgent):
         prob_of_moves = torch.softmax(prob_of_moves, dim=-1)
         prob_of_moves = prob_of_moves * torch.tensor(mask, dtype=torch.float32).to(self.device)
         prob_of_moves = prob_of_moves / prob_of_moves.sum()  # Re-normalize
-        move = torch.argmax(prob_of_moves).item()  # Choose the action with highest probability OR sample from prob_of_moves
+        if np.random.random() < self.eps:  # 10% exploration
+            try:
+                move = torch.multinomial(prob_of_moves, 1).item()
+            except RuntimeError:
+                print("Warning: sampling move doesnt work, choosing max move instead")
+                print("obs:", obs)
+                print("mask:", mask)
+                print("prob_of_moves:", prob_of_moves)
+                move = torch.argmax(prob_of_moves).item()
+        else:
+            move = torch.argmax(prob_of_moves).item()  # Choose the action with highest probability OR sample from prob_of_moves
 
         return move, torch.log(prob_of_moves[0, int(move)]), value # OR return max action from prob_of_moves or return sampled action
 
