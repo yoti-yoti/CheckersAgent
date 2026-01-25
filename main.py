@@ -7,13 +7,12 @@ import torch
 from dotenv import load_dotenv
 import training.train as train_module
 import networks
+import envs
 
 
-def initialize(network_type: str, params_path: str):
+def initialize(network_type: str, params_path: str, opponent_policy: str, opp_params_path: str):
     """Initialize the network based on the type and parameters."""
-    print(f"Initializing {network_type} network with parameters from {params_path}") 
-    env = make_env("Checkers-v0") 
-    
+    print("Creating Checkers environment with opponent policy:", opponent_policy)
 
     load_dotenv()
 
@@ -34,16 +33,20 @@ def initialize(network_type: str, params_path: str):
         # Use the device explicitly from .env, e.g., "cpu", "cuda:0", "mps"
         device = torch.device(device_str)
         print(f"Using device from .env: {device}")
+    
+    opp_agent = CheckersAgent(network_name=opponent_policy, device=device, checkpoint_id=opp_params_path)
+    env = make_env("Checkers-v0", opponent_policy=opp_agent)
+    print(f"Initializing {network_type} network with parameters from {params_path}") 
 
     agent = CheckersAgent(network_name=network_type, device=device, checkpoint_id=params_path)
     return env, agent
 
 
-def train(network_type: str, params_path: str, number_of_eps: int = 10):
+def train(network_type: str, params_path: str, opponent_policy: str, opp_params_path: str, number_of_eps: int = 10,):
     """Train the checkers agent."""
     print(f"Training with {network_type} network")
     print(f"Loading parameters from: {params_path}")
-    env, agent = initialize(network_type, params_path)
+    env, agent = initialize(network_type, params_path, opponent_policy, opp_params_path)
     print(f"Starting training for {number_of_eps} episodes")
     train_module.train(env, agent, number_of_eps)
     agent.save(base_dir="checkpoints", network_name=network_type)
@@ -71,10 +74,22 @@ def main():
         help="Network type to use"
     )
     parser.add_argument(
-        "--params",
+        "--opp",
         type=str,
         required=True,
+        help="Opponent policy to use"
+    )
+    parser.add_argument(
+        "--params",
+        type=str,
+        default=None,
         help="Path to parameters file"
+    )
+    parser.add_argument(
+        "--oppparams",
+        type=str,
+        default=None,
+        help="Path to parameters file for opponent"
     )
     parser.add_argument(
         "--epochs",
@@ -86,9 +101,10 @@ def main():
     args = parser.parse_args()
     
     network_type = args.network
+    opponent_policy = args.opp
     
     if args.mode == "train":
-        train(network_type, args.params, args.epochs)
+        train(network_type, args.params, opponent_policy, args.oppparams, args.epochs)
     elif args.mode == "play":
         play(network_type, args.params)
 

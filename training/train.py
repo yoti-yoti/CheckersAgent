@@ -6,8 +6,11 @@ def train(env, agent, num_episodes):
         ep_reward = 0
 
         while not done:
+            # print(obs)
+            
             action, log_prob, value = agent.act(obs)
             next_obs, reward, terminated, truncated, _ = env.step(action)
+
             done = terminated or truncated
 
             agent.update((obs, action, log_prob, reward, next_obs, done, value))

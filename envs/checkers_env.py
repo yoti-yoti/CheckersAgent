@@ -110,8 +110,8 @@ class CheckersEnv(gym.Env):
         return board
     
 
-# Register the environment
-gym.register(
-    id="Checkers-v0",
-    entry_point="envs.checkers_env:CheckersEnv",
-)
+# # Register the environment
+# gym.register(
+#     id="Checkers-v0",
+#     entry_point="envs.checkers_env:CheckersEnv",
+# )

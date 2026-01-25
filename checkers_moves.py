@@ -214,8 +214,10 @@ def check_game_status(board, player):
     player2_pieces = np.sum((board == -1) | (board == -2))
     
     if player1_pieces == 0:
+        print("Player 1 has no pieces left.")
         return 'loss'
     if player2_pieces == 0:
+        print("Player 2 has no pieces left.")
         return 'win'
     
     # Simple legal move check (can be improved with full checkers rules)
@@ -246,10 +248,13 @@ def check_game_status(board, player):
     player2_can_move = has_moves(-1)
     
     if not player1_can_move and not player2_can_move:
+        print("Neither player can move, draw.")
         return 'draw'
     if not player1_can_move and player == 1:
+        print("Player 1 cannot move, loses.")
         return 'loss'
     if not player2_can_move and player == 1:
+        print("Player 2 cannot move, Player 1 wins.")
         return 'win'
     
     return 'ongoing'

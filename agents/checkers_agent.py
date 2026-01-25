@@ -1,4 +1,4 @@
-from base_agent import BaseAgent
+from agents.base_agent import BaseAgent
 from abc import abstractmethod
 from checkers_moves import get_legal_moves_mask, board_after_move
 import torch
@@ -11,6 +11,7 @@ class CheckersAgent(BaseAgent):
     def __init__(self, network_name="checkers_network1", device=torch.device("cpu"), checkpoint_id=None):
         # Initialize your agent's parameters here
         # self.policy_network = None
+        self.device = device
         if checkpoint_id is None:
             self.initialize_network(network_name, device)
         else:
@@ -24,7 +25,7 @@ class CheckersAgent(BaseAgent):
             "dones": [],
             "values": [],
             "advantages": [],
-            # "returns": []
+            "returns": []
         }
         self.LAMBDA = 0.95
         self.GAMMA = 0.99
@@ -37,14 +38,15 @@ class CheckersAgent(BaseAgent):
         last_action = self.update_data["actions"][-1] if self.update_data["actions"] else None
         mask = get_legal_moves_mask(obs, player=1, prev_board=prev_obs, last_action=last_action) # TODO add flag for forced jumps?
 
-        prob_of_moves, value = self.policy_network(obs) # Assuming policy_network is an extension on nn.Module
+        tensor_obs = torch.from_numpy(obs).float().unsqueeze(0).to(self.device)  # Add batch dimension # TODO need unsqueeze?
+        prob_of_moves, value = self.policy_network(tensor_obs) # Assuming policy_network is an extension on nn.Module
         # apply mask to prob_of_moves
         prob_of_moves = torch.softmax(prob_of_moves, dim=-1)
-        prob_of_moves = prob_of_moves * torch.tensor(mask, dtype=torch.float32)
+        prob_of_moves = prob_of_moves * torch.tensor(mask, dtype=torch.float32).to(self.device)
         prob_of_moves = prob_of_moves / prob_of_moves.sum()  # Re-normalize
         move = torch.argmax(prob_of_moves).item()  # Choose the action with highest probability OR sample from prob_of_moves
 
-        return move, torch.log(prob_of_moves[int(move)]), value # OR return max action from prob_of_moves or return sampled action
+        return move, torch.log(prob_of_moves[0, int(move)]), value # OR return max action from prob_of_moves or return sampled action
 
     def update(self, transition):
         # Implement learning update logic here
@@ -54,12 +56,14 @@ class CheckersAgent(BaseAgent):
 
     def finish_rollout(self):
         # Implement logic to finalize the rollout #TODO add option for rollout per episode or multiple episodes - must count number of moves in episode?
-        rollout = self.update_data
+        rollout = self.update_data.copy()
         rewards = rollout["rewards"]
         values = rollout["values"]
         dones = rollout["dones"]
         advantages = self._calculate_advantages(rewards, values, dones)
         rollout["advantages"].append(advantages)
+        returns = [adv + val for adv, val in zip(advantages, values)]
+        rollout["returns"].append(returns)
 
         self.update_data = { # Clear for next rollout
             "obs": [],
@@ -70,7 +74,7 @@ class CheckersAgent(BaseAgent):
             "dones": [],
             "values": [],
             "advantages": [],
-            # "returns": []
+            "returns": []
         }  
         return rollout
 
@@ -89,18 +93,20 @@ class CheckersAgent(BaseAgent):
         # Convert to tensors if not already
         # TODO TODO TODO TODO
         # TODO rollout is more than one game? what do i do?
-        rollout = self.finish_rollout()
-        states = torch.tensor(rollout["obs"], dtype=torch.int8) # TODO CHECK TYPE each obs is a board state -> a box of 8x8 TODO What type is box?
-        actions = torch.tensor(rollout["actions"])
-        log_probs_old = torch.tensor(rollout["log_probs"], dtype=torch.float32)
-        returns = torch.tensor(rollout["returns"], dtype=torch.float32)
-        advantages = torch.tensor(rollout["advantages"], dtype=torch.float32)
+        # rollout = self.finish_rollout()
+        states = torch.tensor(rollout["obs"], dtype=torch.float32).to(self.device) # TODO CHECK TYPE each obs is a board state -> a box of 8x8 TODO What type is box?
+        actions = torch.tensor(rollout["actions"]).to(self.device)
+        log_probs_old = torch.tensor(rollout["log_probs"], dtype=torch.float32).to(self.device)
+        returns = torch.tensor(rollout["returns"], dtype=torch.float32).to(self.device)
+        advantages = torch.tensor(rollout["advantages"], dtype=torch.float32).to(self.device)
         
         # # Normalize advantages
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8) # Why +1e-8? because std can be 0
-        
+
         # # Get current policy outputs
-        dist, values = self.policy_network(states)  # dist: action distribution, values: critic
+        logits, values = self.policy_network(states)  # dist: action distribution, values: critic
+        prob_of_moves = torch.softmax(logits, dim=-1)
+        dist = torch.distributions.Categorical(prob_of_moves)
         log_probs = dist.log_prob(actions)    
         entropy = dist.entropy().mean()
         
