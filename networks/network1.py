@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from networks.registry import register_network
 
+@register_network("checkers_network1")
 class CheckersPolicyValueAuxNet(nn.Module):
     def __init__(self, action_dim=256, hidden=256):
         super().__init__()

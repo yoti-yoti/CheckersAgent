@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from envs.make_env import make_env
 from envs.checkers_renderer import CheckersRenderer
 from agents.checkers_agent import CheckersAgent
-from training.trainer import Trainer
+from training.train import Trainer
 
 
 def get_device():
@@ -47,7 +47,7 @@ def build_agents_and_env(args, device):
 
     renderer = None
     if args.render:
-        renderer = CheckersRenderer(scale=args.scale)
+        renderer = CheckersRenderer(cell_size=args.scale)
 
     return env, agent, opp_agent, renderer
 
@@ -100,8 +100,22 @@ def main():
         trainer.train(num_episodes=args.episodes, max_steps_per_episode=args.max_steps)
 
     if args.mode == "play":
-        raise NotImplementedError
-
+        #raise NotImplementedError
+        trainer = Trainer(
+            env=env,
+            agent=agent,
+            opponent=opp_agent,
+            renderer=renderer,
+            render_every_steps=args.render_every_steps,
+            render_fps=args.fps,
+            rollout_mode=args.rollout_mode,
+            rollout_steps=args.rollout_steps,
+            save_every_episodes=args.save_every,
+            checkpoint_dir=args.ckpt_dir,
+            network_name=args.network,
+            device=device,
+        )
+        trainer.play(num_episodes=args.episodes, max_steps_per_episode=args.max_steps)
 
 if __name__ == "__main__":
     main()

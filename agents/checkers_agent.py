@@ -165,12 +165,13 @@ class CheckersAgent(BaseAgent):
         entropy_coef=0.01,
         max_grad_norm=0.5,
     ):
+        torch.autograd.set_detect_anomaly(True)
         obs_np = np.asarray(rollout["obs"])
         T = obs_np.shape[0]
 
         obs_cls = np.stack([_board_to_class_idx(obs_np[i]) for i in range(T)], axis=0)
         states = torch.from_numpy(obs_cls).to(self.device)
-        states_oh = F.one_hot(states, num_classes=5).float().permute(0, 3, 1, 2)
+        states_oh = F.one_hot(states, num_classes=5).float().permute(0, 3, 1, 2).contiguous()
 
         actions = torch.tensor(rollout["actions"], dtype=torch.int64, device=self.device)
 
@@ -184,13 +185,15 @@ class CheckersAgent(BaseAgent):
 
         masks_np = np.asarray(rollout["masks"], dtype=np.int8)
         masks = torch.from_numpy(masks_np).to(self.device).float()
-
+        states = states.contiguous()
+        masks = masks.contiguous()
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         self.policy_network.train()
 
         out = self.policy_network(states_oh, actions=actions if self.use_self_supervised else None)
         if isinstance(out, (tuple, list)) and len(out) >= 2:
+            
             logits, values = out[0], out[1]
             aux_logits = out[2] if (self.use_self_supervised and len(out) >= 3) else None
         else:

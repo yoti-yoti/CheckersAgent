@@ -1,2 +1,2 @@
-from . import network1
+from . import network1, cnn1
 
