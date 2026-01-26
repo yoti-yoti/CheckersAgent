@@ -1,3 +1,4 @@
+# envs/make_env.py
 import gymnasium as gym
 
 def make_env(env_name, opponent_policy=None, render_mode=None, seed=None):
@@ -5,6 +6,3 @@ def make_env(env_name, opponent_policy=None, render_mode=None, seed=None):
     if seed is not None:
         env.reset(seed=seed)
     return env
-
-    
-
