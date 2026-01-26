@@ -1,15 +1,40 @@
+import os
+import numpy as np
+import torch
+import torch.nn.functional as F
 from agents.base_agent import BaseAgent
 from checkers_moves import get_legal_moves_mask
-import torch
-import os
 from networks.registry import get_network_class
-import torch.nn.functional as F
-import numpy as np
+
+
+def _board_to_class_idx(board_np: np.ndarray) -> np.ndarray:
+    m = {-2: 0, -1: 1, 0: 2, 1: 3, 2: 4}
+    v = np.vectorize(lambda x: m[int(x)])
+    return v(board_np).astype(np.int64)
+
 
 class CheckersAgent(BaseAgent):
-    def __init__(self, network_name="checkers_network1", device=torch.device("cpu"), checkpoint_id=None, player="agent", eps=0.0):
+    def __init__(
+        self,
+        network_name="checkers_network1",
+        device=torch.device("cpu"),
+        checkpoint_id=None,
+        player="agent",
+        eps=0.0,
+        gamma=0.99,
+        lam=0.95,
+        lr=3e-4,
+        use_self_supervised=False,
+        aux_coef=0.1,
+        temperature=1.0,
+    ):
         self.device = device
-        self.eps = eps
+        self.eps = float(eps)
+        self.GAMMA = float(gamma)
+        self.LAMBDA = float(lam)
+        self.use_self_supervised = bool(use_self_supervised)
+        self.aux_coef = float(aux_coef)
+        self.temperature = float(temperature)
 
         if player not in ["agent", "opponent"]:
             raise ValueError("player must be 'agent' or 'opponent'")
@@ -18,7 +43,14 @@ class CheckersAgent(BaseAgent):
         if checkpoint_id is None:
             self.initialize_network(network_name, device)
         else:
-            self.load(base_dir="checkpoints", network_name=network_name, checkpoint_id=checkpoint_id, device=device)
+            self.load(
+                base_dir="checkpoints",
+                network_name=network_name,
+                checkpoint_id=checkpoint_id,
+                device=device,
+            )
+
+        self.optimizer = torch.optim.Adam(self.policy_network.parameters(), lr=lr)
 
         self.update_data = {
             "obs": [],
@@ -30,10 +62,6 @@ class CheckersAgent(BaseAgent):
             "values": [],
             "masks": [],
         }
-
-        self.LAMBDA = 0.95
-        self.GAMMA = 0.99
-        self.optimizer = torch.optim.Adam(self.policy_network.parameters(), lr=3e-4)
 
     def act(self, obs, mask=None):
         if mask is None:
@@ -47,33 +75,43 @@ class CheckersAgent(BaseAgent):
             move = int(np.random.randint(0, 256))
             return move, torch.tensor(0.0, device=self.device), torch.tensor(0.0, device=self.device)
 
-        tensor_obs = torch.from_numpy(np.asarray(obs)).float().to(self.device)
-        if tensor_obs.ndim == 2:
-            tensor_obs = tensor_obs.unsqueeze(0)
-        if tensor_obs.ndim == 3:
-            tensor_obs = tensor_obs.unsqueeze(1)
+        obs_t = torch.from_numpy(np.asarray(obs)).to(self.device)
+        if obs_t.ndim == 2:
+            obs_t = obs_t.unsqueeze(0)
+        obs_cls = torch.from_numpy(_board_to_class_idx(obs_t.squeeze(0).detach().cpu().numpy())).to(self.device)
+        obs_oh = F.one_hot(obs_cls, num_classes=5).float().permute(2, 0, 1).unsqueeze(0)
 
-        logits, value = self.policy_network(tensor_obs)
+        out = self.policy_network(obs_oh)
+        if isinstance(out, (tuple, list)) and len(out) >= 2:
+            logits, value = out[0], out[1]
+        else:
+            raise ValueError("policy_network must return (logits, value) or (logits, value, aux)")
+
         logits = logits.squeeze(0)
+        value = value.squeeze()
 
         mask_t = torch.from_numpy(mask_np).to(self.device).float()
         masked_logits = logits.masked_fill(mask_t == 0, -1e9)
+        if self.temperature != 1.0:
+            masked_logits = masked_logits / max(self.temperature, 1e-6)
+
         probs = torch.softmax(masked_logits, dim=-1)
 
         if torch.isnan(probs).any() or probs.sum().item() <= 0:
             move = int(np.random.choice(legal_idx))
             log_prob = torch.tensor(0.0, device=self.device)
-            v = value.squeeze()
-            return move, log_prob, v
+            return move, log_prob, value
 
         if np.random.random() < self.eps:
             move = int(np.random.choice(legal_idx))
-        else:
-            move = int(torch.argmax(probs, dim=-1).item())
+            log_prob = torch.log(probs[move].clamp_min(1e-12))
+            return move, log_prob, value
 
-        log_prob = torch.log(probs[move].clamp_min(1e-12))
-        v = value.squeeze()
-        return move, log_prob, v
+        dist = torch.distributions.Categorical(probs)
+        action_t = dist.sample()
+        move = int(action_t.item())
+        log_prob = dist.log_prob(action_t)
+        return move, log_prob, value
 
     def update(self, transition: dict):
         for k in self.update_data.keys():
@@ -85,9 +123,12 @@ class CheckersAgent(BaseAgent):
 
         rewards = [float(r) for r in rollout["rewards"]]
         dones = [float(d) for d in rollout["dones"]]
-        values = [float(v) if not torch.is_tensor(v) else float(v.detach().cpu().item()) for v in rollout["values"]]
+        values = [
+            float(v.detach().cpu().item()) if torch.is_tensor(v) else float(v)
+            for v in rollout["values"]
+        ]
 
-        advantages, returns = self._calculate_advantages_and_returns(rewards, values, dones)
+        advantages, returns = self._calc_adv_and_returns(rewards, values, dones)
         rollout["advantages"] = advantages
         rollout["returns"] = returns
 
@@ -104,7 +145,7 @@ class CheckersAgent(BaseAgent):
 
         return rollout
 
-    def _calculate_advantages_and_returns(self, rewards, values, dones):
+    def _calc_adv_and_returns(self, rewards, values, dones):
         advantages = []
         gae = 0.0
         values_ext = values + [0.0]
@@ -116,18 +157,27 @@ class CheckersAgent(BaseAgent):
         returns = [advantages[i] + values[i] for i in range(len(values))]
         return advantages, returns
 
-    def learn_from_rollout(self, rollout, clip_eps=0.2, value_coef=0.5, entropy_coef=0.01, max_grad_norm=0.5):
-        obs_np = np.asarray(rollout["obs"], dtype=np.float32)
-        states = torch.from_numpy(obs_np).to(self.device)
-        if states.ndim == 3:
-            states = states.unsqueeze(1)
+    def learn_from_rollout(
+        self,
+        rollout,
+        clip_eps=0.2,
+        value_coef=0.5,
+        entropy_coef=0.01,
+        max_grad_norm=0.5,
+    ):
+        obs_np = np.asarray(rollout["obs"])
+        T = obs_np.shape[0]
+
+        obs_cls = np.stack([_board_to_class_idx(obs_np[i]) for i in range(T)], axis=0)
+        states = torch.from_numpy(obs_cls).to(self.device)
+        states_oh = F.one_hot(states, num_classes=5).float().permute(0, 3, 1, 2)
 
         actions = torch.tensor(rollout["actions"], dtype=torch.int64, device=self.device)
 
         log_probs_old = torch.stack([
-            lp if torch.is_tensor(lp) else torch.tensor(lp, device=self.device)
+            lp.detach().to(self.device) if torch.is_tensor(lp) else torch.tensor(lp, device=self.device)
             for lp in rollout["log_probs"]
-        ]).to(self.device).detach()
+        ]).detach()
 
         returns = torch.tensor(rollout["returns"], dtype=torch.float32, device=self.device)
         advantages = torch.tensor(rollout["advantages"], dtype=torch.float32, device=self.device)
@@ -139,7 +189,13 @@ class CheckersAgent(BaseAgent):
 
         self.policy_network.train()
 
-        logits, values = self.policy_network(states)
+        out = self.policy_network(states_oh, actions=actions if self.use_self_supervised else None)
+        if isinstance(out, (tuple, list)) and len(out) >= 2:
+            logits, values = out[0], out[1]
+            aux_logits = out[2] if (self.use_self_supervised and len(out) >= 3) else None
+        else:
+            raise ValueError("policy_network must return (logits, value) or (logits, value, aux_logits)")
+
         masked_logits = logits.masked_fill(masks == 0, -1e9)
         probs = torch.softmax(masked_logits, dim=-1)
 
@@ -154,63 +210,58 @@ class CheckersAgent(BaseAgent):
 
         value_loss = F.mse_loss(values.squeeze(-1), returns)
 
-        loss = policy_loss + value_coef * value_loss - entropy_coef * entropy
+        rl_loss = policy_loss + value_coef * value_loss - entropy_coef * entropy
+        loss = rl_loss
+
+        aux_loss_val = 0.0
+        if self.use_self_supervised:
+            next_obs_np = np.asarray(rollout["next_obs"])
+            next_cls = np.stack([_board_to_class_idx(next_obs_np[i]) for i in range(T)], axis=0)
+            target_next = torch.from_numpy(next_cls).to(self.device)
+
+            if aux_logits is None:
+                raise ValueError("use_self_supervised=True but network did not return aux_logits")
+
+            aux_loss = F.cross_entropy(
+                aux_logits.reshape(T * 64, 5),
+                target_next.reshape(T * 64),
+            )
+            loss = loss + self.aux_coef * aux_loss
+            aux_loss_val = float(aux_loss.detach().cpu().item())
 
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.policy_network.parameters(), max_grad_norm)
         self.optimizer.step()
 
-        return float(loss.item())
+        return {
+            "loss": float(loss.detach().cpu().item()),
+            "rl_loss": float(rl_loss.detach().cpu().item()),
+            "aux_loss": aux_loss_val,
+        }
 
     def _next_checkpoint_id(self, save_dir: str) -> int:
-        existing = [
-            f for f in os.listdir(save_dir)
-            if f.startswith("checkpoint_") and f.endswith(".pt")
-        ]
+        existing = [f for f in os.listdir(save_dir) if f.startswith("checkpoint_") and f.endswith(".pt")]
         if not existing:
             return 0
-
-        ids = [
-            int(f.replace("checkpoint_", "").replace(".pt", ""))
-            for f in existing
-        ]
+        ids = [int(f.replace("checkpoint_", "").replace(".pt", "")) for f in existing]
         return max(ids) + 1
 
     def save(self, base_dir: str, network_name: str):
         save_dir = os.path.join(base_dir, network_name)
         os.makedirs(save_dir, exist_ok=True)
-
         ckpt_id = self._next_checkpoint_id(save_dir)
         save_path = os.path.join(save_dir, f"checkpoint_{ckpt_id:03d}.pt")
-
-        torch.save(
-            {
-                "network_name": network_name,
-                "state_dict": self.policy_network.state_dict(),
-            },
-            save_path,
-        )
-
+        torch.save({"network_name": network_name, "state_dict": self.policy_network.state_dict()}, save_path)
         print(f"Saved checkpoint {ckpt_id} to {save_path}")
 
-    def load(
-        self,
-        base_dir: str,
-        network_name: str,
-        checkpoint_id: int | None = None,
-        device=torch.device("cpu"),
-    ):
+    def load(self, base_dir: str, network_name: str, checkpoint_id: int | None = None, device=torch.device("cpu")):
         load_dir = os.path.join(base_dir, network_name)
-
         if not os.path.exists(load_dir):
             raise FileNotFoundError(f"No directory {load_dir}")
 
         if checkpoint_id is None:
-            checkpoints = sorted(
-                f for f in os.listdir(load_dir)
-                if f.startswith("checkpoint_")
-            )
+            checkpoints = sorted(f for f in os.listdir(load_dir) if f.startswith("checkpoint_"))
             if not checkpoints:
                 raise FileNotFoundError("No checkpoints found")
             ckpt_file = checkpoints[-1]
@@ -222,11 +273,9 @@ class CheckersAgent(BaseAgent):
 
         net_cls = get_network_class(network_name)
         network = net_cls()
-
         network.load_state_dict(checkpoint["state_dict"])
         network.to(device)
         network.train()
-
         self.policy_network = network
         print(f"Loaded {network_name} from {load_path}")
 

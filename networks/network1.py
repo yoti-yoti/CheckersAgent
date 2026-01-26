@@ -1,39 +1,44 @@
-import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
-# from torch.utils.data import TensorDataset, DataLoader
-# # import torchviz 
-# from sklearn.model_selection import train_test_split 
-
-# from sklearn.preprocessing import StandardScaler
-# import matplotlib.pyplot as plt
-# %matplotlib notebook
-# %matplotlib inline
+import torch.nn.functional as F
 
 
-from networks.registry import register_network
-
-@register_network("checkers_network1")
-class CheckersNetwork1(nn.Module):
-    def __init__(self, input_size=64, hidden_size=128, output_size=256):
+class CheckersPolicyValueAuxNet(nn.Module):
+    def __init__(self, action_dim=256, hidden=256):
         super().__init__()
-
-        self.backbone = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(input_size, hidden_size),
+        self.enc = nn.Sequential(
+            nn.Conv2d(5, 64, 3, padding=1),
             nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU()
+            nn.Conv2d(64, 128, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, 3, padding=1),
+            nn.ReLU(),
+        )
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(128 * 8 * 8, hidden),
+            nn.ReLU(),
+        )
+        self.policy = nn.Linear(hidden, action_dim)
+        self.value = nn.Linear(hidden, 1)
+
+        self.action_emb = nn.Embedding(action_dim, hidden)
+        self.aux = nn.Sequential(
+            nn.Linear(hidden + hidden, hidden),
+            nn.ReLU(),
+            nn.Linear(hidden, 64 * 5),
         )
 
-        self.policy_head = nn.Linear(hidden_size, output_size)
-        self.value_head = nn.Linear(hidden_size, 1)
+    def forward(self, x, actions=None):
+        z = self.enc(x)
+        h = self.fc(z)
+        logits = self.policy(h)
+        value = self.value(h)
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        if actions is None:
+            return logits, value
 
-    def forward(self, x):
-        x = self.backbone(x)              # ← THIS WAS MISSING
-        logits = self.policy_head(x)
-        value = self.value_head(x).squeeze(-1)
-        return logits, value
+        a = self.action_emb(actions)
+        ha = torch.cat([h, a], dim=-1)
+        aux_logits = self.aux(ha).reshape(-1, 64, 5)
+        return logits, value, aux_logits
