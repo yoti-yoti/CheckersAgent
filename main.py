@@ -60,6 +60,7 @@ def main():
     parser.add_argument("--opp", type=str, required=True)
     parser.add_argument("--params", type=int, default=None)
     parser.add_argument("--oppparams", type=int, default=None)
+    parser.add_argument("--randopp", action="store_true")
 
     parser.add_argument("--episodes", type=int, default=2000)
     parser.add_argument("--max_steps", type=int, default=500)
@@ -96,6 +97,7 @@ def main():
             checkpoint_dir=args.ckpt_dir,
             network_name=args.network,
             device=device,
+            rand_opp=args.randopp,
         )
         trainer.train(num_episodes=args.episodes, max_steps_per_episode=args.max_steps)
 

@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 import pickle
 from stats_visualize import visualize
-
+from agents.checkers_agent import CheckersAgent
 
 class Trainer:
     def __init__(
@@ -22,6 +22,7 @@ class Trainer:
         checkpoint_dir="checkpoints",
         network_name="checkers_network1",
         device=torch.device("cpu"),
+        rand_opp=False,
     ):
         self.env = env
         self.agent = agent
@@ -35,6 +36,7 @@ class Trainer:
         self.checkpoint_dir = checkpoint_dir
         self.network_name = network_name
         self.device = device
+        self.rand_opp = rand_opp
 
         self.global_step = 0
 
@@ -67,13 +69,32 @@ class Trainer:
         if info is None:
             return None
         return info.get("action_mask", None)
+    
+    def OPPONENT_CHECKPOINT_ID_RANDOM(self) -> int:
+        existing = [f for f in os.listdir("checkpoints/checkers_network1") if f.startswith("checkpoint_") and f.endswith(".pt")]
+        if not existing:
+            return 0
+        ids = [int(f.replace("checkpoint_", "").replace(".pt", "")) for f in existing]
+        return np.random.randint(0, max(ids))
 
     def train(self, num_episodes=1000, max_steps_per_episode=500):
         episode_returns = []
         episode_lengths = []
+        # self.agent.save(base_dir=self.checkpoint_dir, network_name=self.network_name)
 
         for ep in range(1, int(num_episodes) + 1):
-            obs, info = self.env.reset()
+            opp_agent = None
+            ##############################################################################################################
+            if self.rand_opp: ########## MUST HAVE AN EXISTING CHECKPOINT TO DO THIS OTHERWISE IT CRASHES!!!!!!!!!!!######
+                opp_agent = CheckersAgent(
+                    network_name=self.network_name,
+                    device=self.device,
+                    checkpoint_id=self.OPPONENT_CHECKPOINT_ID_RANDOM(),
+                    player="opponent",
+                    eps=0.0,
+                )
+
+            obs, info = self.env.reset(options={"opponent_agent": opp_agent})
             done = False
             ep_return = 0.0
             ep_len = 0

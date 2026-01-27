@@ -44,7 +44,9 @@ class CheckersEnv(gym.Env):
         self.current_player = 1
         self.pending_player = None
         self.pending_last_action = None
-
+        
+        if options is not None and "opponent_agent" in options:
+            self.opponent_policy_agent = options["opponent_agent"]
         # Randomly choose starting player
         self.current_player = self.np_random.choice([1, -1])
 
@@ -178,6 +180,9 @@ class CheckersEnv(gym.Env):
         self.current_player = 1
         info = {"action_mask": self.action_mask(self.current_player, None)}
         return self.board.copy(), 0.0, False, False, info
+    
+    def set_opponent_policy(self, opponent_policy: BaseAgent):
+        self.opponent_policy_agent = opponent_policy
     
     def _prepare_opponent_board(self, board):
         """Flip board for opponent perspective: 180° + swap signs"""
