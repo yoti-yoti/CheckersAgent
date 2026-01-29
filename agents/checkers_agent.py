@@ -250,6 +250,8 @@ class CheckersAgent(BaseAgent):
         ids = [int(f.replace("checkpoint_", "").replace(".pt", "")) for f in existing]
         return max(ids) + 1
 
+    
+    
     def save(self, base_dir: str, network_name: str):
         save_dir = os.path.join(base_dir, network_name)
         os.makedirs(save_dir, exist_ok=True)

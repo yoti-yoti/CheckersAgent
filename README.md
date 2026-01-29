@@ -143,3 +143,13 @@ Questions:
 - `train.py` : contains logic for training loop: recieves env, agent, num_of_episodes, and runs loop of a game until it is finished, updating the rollout, then applying finish rollout and learn from rollout. Same for any env and agent that are gym environments and extend `BaseAgent`
 - `main.py` : main function for training, requires arguments for mode (train or play), --network (agent network to use form registry), --params (path to parameter file to load from(checkpoint)) and --epochs, number of epochs(episodes?) to run
     - if `train` runs training with the inputted network, if `play` TODO 4 - should implement interface for playing against the trained agent that was loaded.
+
+
+
+
+
+    TODO IDEAS: 
+    add different network types/builds and compare(including no policy)
+    compare to intelligent agent
+    different initializations
+    training against different models
